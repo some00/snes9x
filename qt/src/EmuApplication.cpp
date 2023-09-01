@@ -406,63 +406,46 @@ void EmuApplication::updateSettings()
     });
 }
 
-void EmuApplication::pollJoysticks()
+void EmuApplication::on_sdl_event(SDL_Event event, int index)
 {
-    while (1)
+    switch (event.type)
     {
-        auto event = input_manager->ProcessEvent();
-        if (!event)
-            return;
-
-        switch (event->type)
+    case SDL_JOYDEVICEADDED:
+    case SDL_JOYDEVICEREMOVED:
+        if (joypads_changed_callback)
+            joypads_changed_callback();
+        break;
+    case SDL_JOYAXISMOTION: {
+        auto axis_event = input_manager->DiscretizeJoyAxisEvent(event);
+        if (axis_event)
         {
-        case SDL_JOYDEVICEADDED:
-        case SDL_JOYDEVICEREMOVED:
-            if (joypads_changed_callback)
-                joypads_changed_callback();
-            break;
-        case SDL_JOYAXISMOTION: {
-            auto axis_event = input_manager->DiscretizeJoyAxisEvent(event.value());
-            if (axis_event)
-            {
-                auto binding = EmuBinding::joystick_axis(
-                    axis_event->joystick_num,
-                    axis_event->axis,
-                    axis_event->direction);
+            auto binding = EmuBinding::joystick_axis(
+                axis_event->joystick_num,
+                axis_event->axis,
+                axis_event->direction);
 
-                reportBinding(binding, axis_event->pressed);
-            }
-            break;
+            reportBinding(binding, axis_event->pressed);
         }
-        case SDL_JOYBUTTONDOWN:
-        case SDL_JOYBUTTONUP:
-            reportBinding(EmuBinding::joystick_button(
-                              input_manager->devices[event->jbutton.which].index,
-                              event->jbutton.button), event->jbutton.state == 1);
-            break;
-        case SDL_JOYHATMOTION:
-            auto hat_event = input_manager->DiscretizeHatEvent(event.value());
-            if (hat_event)
-            {
-                reportBinding(EmuBinding::joystick_hat(hat_event->joystick_num,
-                                                       hat_event->hat,
-                                                       hat_event->direction),
-                              hat_event->pressed);
-            }
-
-            break;
-        }
+        break;
     }
-}
+    case SDL_JOYBUTTONDOWN:
+    case SDL_JOYBUTTONUP:
+        reportBinding(EmuBinding::joystick_button(
+                          index,
+                          event.jbutton.button), event.jbutton.state == 1);
+        break;
+    case SDL_JOYHATMOTION:
+        auto hat_event = input_manager->DiscretizeHatEvent(event);
+        if (hat_event)
+        {
+            reportBinding(EmuBinding::joystick_hat(hat_event->joystick_num,
+                                                   hat_event->hat,
+                                                   hat_event->direction),
+                          hat_event->pressed);
+        }
 
-void EmuApplication::startInputTimer()
-{
-    poll_input_timer = std::make_unique<QTimer>();
-    poll_input_timer->setTimerType(Qt::TimerType::PreciseTimer);
-    poll_input_timer->setInterval(4);
-    poll_input_timer->setSingleShot(false);
-    poll_input_timer->callOnTimeout([&] { pollJoysticks(); });
-    poll_input_timer->start();
+        break;
+    }
 }
 
 void EmuApplication::loadState(int slot)
@@ -635,4 +618,12 @@ void EmuThread::run()
 void EmuThread::setMainLoop(std::function<void ()> loop)
 {
     main_loop = loop;
+}
+
+void EmuApplication::setInputManager(
+        std::unique_ptr<SDLInputManager> input_manager)
+{
+    this->input_manager = std::move(input_manager);
+    connect(this->input_manager.get(), &SDLInputManager::event,
+            this, &EmuApplication::on_sdl_event);
 }

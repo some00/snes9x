@@ -37,14 +37,15 @@ int main(int argc, char *argv[])
     emu.config->setDefaults();
     emu.config->loadFile(EmuConfig::findConfigFile());
 
-    emu.input_manager = std::make_unique<SDLInputManager>();
+    emu.setInputManager(std::make_unique<SDLInputManager>());
     emu.window = std::make_unique<EmuMainWindow>(&emu);
     emu.window->show();
 
     emu.updateBindings();
-    emu.startInputTimer();
+    emu.input_manager->start();
     emu.qtapp->exec();
 
+    emu.input_manager->stop();
     emu.stopThread();
     emu.config->saveFile(EmuConfig::findConfigFile());
 

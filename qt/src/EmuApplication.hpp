@@ -2,6 +2,7 @@
 #include <QApplication>
 #include <QTimer>
 #include <QThread>
+#include <SDL2/SDL.h>
 
 class EmuMainWindow;
 class EmuConfig;
@@ -42,8 +43,10 @@ Q_OBJECT
     void runOnThread(std::function<void()> func, bool blocking = false);
 };
 
-struct EmuApplication
+struct EmuApplication : QObject
 {
+    Q_OBJECT
+public:
     std::unique_ptr<QApplication> qtapp;
     std::unique_ptr<EmuConfig> config;
     std::unique_ptr<SDLInputManager> input_manager;
@@ -60,8 +63,6 @@ struct EmuApplication
     void updateBindings();
     bool isBound(EmuBinding b);
     void reportBinding(EmuBinding b, bool active);
-    void startInputTimer();
-    void pollJoysticks();
     void restartAudio();
     void writeSamples(int16_t *data, int samples);
     void mainLoop();
@@ -83,6 +84,7 @@ struct EmuApplication
     void stopThread();
     bool isCoreActive();
     QString iconPrefix();
+    void setInputManager(std::unique_ptr<SDLInputManager> input_manager);
 
     enum Handler
     {
@@ -90,10 +92,11 @@ struct EmuApplication
         UI   = 1
     };
     std::map<uint32_t, std::pair<std::string, Handler>> bindings;
-    std::unique_ptr<QTimer> poll_input_timer;
     std::function<void(EmuBinding)> binding_callback = nullptr;
     std::function<void()> joypads_changed_callback = nullptr;
     int save_slot = 0;
     int pause_count = 0;
     int suspend_count = 0;
+private slots:
+    void on_sdl_event(SDL_Event event, int index);
 };

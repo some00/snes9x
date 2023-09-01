@@ -62,7 +62,10 @@ ControllerPanel::ControllerPanel(EmuApplication *app)
 void ControllerPanel::recreateAutoAssignMenu()
 {
     auto_assign_menu.clear();
-    auto controller_list = app->input_manager->getXInputControllers();
+    std::vector<std::pair<int, std::string>> controller_list;
+    app->input_manager->runInSDLThread([&controller_list, this] (auto) {
+        controller_list = app->input_manager->getXInputControllers();
+    });
 
     for (int i = 0; i < app->config->allowed_bindings; i++)
     {
@@ -97,32 +100,34 @@ void ControllerPanel::autoPopulateWithKeyboard(int slot)
 
 void ControllerPanel::autoPopulateWithJoystick(int joystick_id, int slot)
 {
-    auto &device = app->input_manager->devices[joystick_id];
-    auto sdl_controller = device.controller;
-    auto &buttons = app->config->binding.controller[controllerComboBox->currentIndex()].buttons;
-    const SDL_GameControllerButton list[] = { SDL_CONTROLLER_BUTTON_DPAD_UP,
-                                              SDL_CONTROLLER_BUTTON_DPAD_DOWN,
-                                              SDL_CONTROLLER_BUTTON_DPAD_LEFT,
-                                              SDL_CONTROLLER_BUTTON_DPAD_RIGHT,
-                                              // B, A and X, Y are inverted on XInput vs SNES
-                                              SDL_CONTROLLER_BUTTON_B,
-                                              SDL_CONTROLLER_BUTTON_A,
-                                              SDL_CONTROLLER_BUTTON_Y,
-                                              SDL_CONTROLLER_BUTTON_X,
-                                              SDL_CONTROLLER_BUTTON_LEFTSHOULDER,
-                                              SDL_CONTROLLER_BUTTON_RIGHTSHOULDER,
-                                              SDL_CONTROLLER_BUTTON_START,
-                                              SDL_CONTROLLER_BUTTON_BACK };
-    for (auto i = 0; i < std::size(list); i++)
-    {
-        auto sdl_binding = SDL_GameControllerGetBindForButton(sdl_controller, list[i]);
-        if (SDL_CONTROLLER_BINDTYPE_BUTTON == sdl_binding.bindType)
-            buttons[4 * i + slot] = EmuBinding::joystick_button(device.index, sdl_binding.value.button);
-        else if (SDL_CONTROLLER_BINDTYPE_HAT == sdl_binding.bindType)
-            buttons[4 * i + slot] = EmuBinding::joystick_hat(device.index, sdl_binding.value.hat.hat, sdl_binding.value.hat.hat_mask);
-        else if (SDL_CONTROLLER_BINDTYPE_AXIS == sdl_binding.bindType)
-            buttons[4 * i + slot] = EmuBinding::joystick_axis(device.index, sdl_binding.value.axis, sdl_binding.value.axis);
-    }
+    app->input_manager->runInSDLThread([&] (auto& devices) {
+        auto &device = devices[joystick_id];
+        auto sdl_controller = device.controller;
+        auto &buttons = app->config->binding.controller[controllerComboBox->currentIndex()].buttons;
+        const SDL_GameControllerButton list[] = { SDL_CONTROLLER_BUTTON_DPAD_UP,
+                                                  SDL_CONTROLLER_BUTTON_DPAD_DOWN,
+                                                  SDL_CONTROLLER_BUTTON_DPAD_LEFT,
+                                                  SDL_CONTROLLER_BUTTON_DPAD_RIGHT,
+                                                  // B, A and X, Y are inverted on XInput vs SNES
+                                                  SDL_CONTROLLER_BUTTON_B,
+                                                  SDL_CONTROLLER_BUTTON_A,
+                                                  SDL_CONTROLLER_BUTTON_Y,
+                                                  SDL_CONTROLLER_BUTTON_X,
+                                                  SDL_CONTROLLER_BUTTON_LEFTSHOULDER,
+                                                  SDL_CONTROLLER_BUTTON_RIGHTSHOULDER,
+                                                  SDL_CONTROLLER_BUTTON_START,
+                                                  SDL_CONTROLLER_BUTTON_BACK };
+        for (auto i = 0; i < std::size(list); i++)
+        {
+            auto sdl_binding = SDL_GameControllerGetBindForButton(sdl_controller, list[i]);
+            if (SDL_CONTROLLER_BINDTYPE_BUTTON == sdl_binding.bindType)
+                buttons[4 * i + slot] = EmuBinding::joystick_button(device.index, sdl_binding.value.button);
+            else if (SDL_CONTROLLER_BINDTYPE_HAT == sdl_binding.bindType)
+                buttons[4 * i + slot] = EmuBinding::joystick_hat(device.index, sdl_binding.value.hat.hat, sdl_binding.value.hat.hat_mask);
+            else if (SDL_CONTROLLER_BINDTYPE_AXIS == sdl_binding.bindType)
+                buttons[4 * i + slot] = EmuBinding::joystick_axis(device.index, sdl_binding.value.axis, sdl_binding.value.axis);
+        }
+    });
     fillTable();
 }
 

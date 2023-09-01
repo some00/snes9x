@@ -9,7 +9,8 @@
 
 SDLInputManager::SDLInputManager()
 {
-    SDL_Init(SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK);
+    qRegisterMetaType<SDL_Event>();
+    work_event_id = SDL_RegisterEvents(1);
 }
 
 SDLInputManager::~SDLInputManager()
@@ -18,6 +19,7 @@ SDLInputManager::~SDLInputManager()
 
 void SDLInputManager::AddDevice(int device_index)
 {
+    std::unique_lock lk{mtx};
     SDLInputDevice d;
     if (!d.open(device_index))
         return;
@@ -31,6 +33,7 @@ void SDLInputManager::AddDevice(int device_index)
 
 void SDLInputManager::RemoveDevice(int instance_id)
 {
+    std::unique_lock lk{mtx};
     auto iter = devices.find(instance_id);
     if (iter == devices.end())
         return;
@@ -46,19 +49,10 @@ void SDLInputManager::RemoveDevice(int instance_id)
     return;
 }
 
-void SDLInputManager::ClearEvents()
-{
-    std::optional<SDL_Event> event;
-
-    while ((event = ProcessEvent()))
-    {
-    }
-}
-
-
 std::optional<SDLInputManager::DiscreteHatEvent>
 SDLInputManager::DiscretizeHatEvent(SDL_Event &event)
 {
+    std::unique_lock lk{mtx};
     auto &device = devices.at(event.jhat.which);
     auto &hat = event.jhat.hat;
     auto new_state = event.jhat.value;
@@ -87,6 +81,7 @@ SDLInputManager::DiscretizeHatEvent(SDL_Event &event)
 std::optional<SDLInputManager::DiscreteAxisEvent>
 SDLInputManager::DiscretizeJoyAxisEvent(SDL_Event &event)
 {
+    std::unique_lock {mtx};
     auto &device = devices.at(event.jaxis.which);
     auto &axis = event.jaxis.axis;
     auto now = event.jaxis.value;
@@ -122,48 +117,51 @@ SDLInputManager::DiscretizeJoyAxisEvent(SDL_Event &event)
     return dae;
 }
 
-std::optional<SDL_Event> SDLInputManager::ProcessEvent()
+void SDLInputManager::run()
 {
-    SDL_Event event{};
+    bool run = true;
+    SDL_Init(SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK);
+    SDL_Event e{};
 
-    while (SDL_PollEvent(&event))
+    while (run)
     {
-        switch (event.type)
+        SDL_WaitEvent(&e);
+        switch (e.type)
         {
         case SDL_JOYAXISMOTION:
-            return event;
         case SDL_JOYHATMOTION:
-            return event;
+            emit event(e, 0);
+            break;
         case SDL_JOYBUTTONUP:
         case SDL_JOYBUTTONDOWN:
-            return event;
+            {
+                std::unique_lock lk{mtx};
+                emit event(e, devices[e.jbutton.which].index);
+            }
+            break;
         case SDL_JOYDEVICEADDED:
-            AddDevice(event.jdevice.which);
-            return event;
+            AddDevice(e.jdevice.which);
+            emit event(e, 0);
+            break;
         case SDL_JOYDEVICEREMOVED:
-            RemoveDevice(event.jdevice.which);
-            return event;
+            RemoveDevice(e.jdevice.which);
+            emit event(e, 0);
+            break;
+        case SDL_QUIT:
+            run = false;
+            break;
+        default:
+            if (e.type == work_event_id)
+            {
+                std::unique_lock lk{mtx};
+                if (on_thread)
+                    on_thread(devices);
+                cv.notify_one();
+            }
+            break;
         }
     }
-
-    return std::nullopt;
-}
-
-void SDLInputManager::PrintDevices()
-{
-    for (auto &pair : devices)
-    {
-        auto &d = pair.second;
-        printf("%s: \n", SDL_JoystickName(d.joystick));
-        printf(" Index: %d\n"
-               " Instance ID: %d\n"
-               " Controller %s\n"
-               " SDL Joystick Number: %d\n",
-               d.index,
-               d.instance_id,
-               d.is_controller ? "yes" : "no",
-               d.sdl_joystick_number);
-    }
+    SDL_Quit();
 }
 
 int SDLInputManager::FindFirstOpenIndex()
@@ -214,6 +212,7 @@ bool SDLInputDevice::open(int joystick_num)
 
 std::vector<std::pair<int, std::string>> SDLInputManager::getXInputControllers()
 {
+    std::unique_lock lk{mtx};
     std::vector<std::pair<int, std::string>> list;
 
     for (auto &d : devices)
@@ -226,4 +225,20 @@ std::vector<std::pair<int, std::string>> SDLInputManager::getXInputControllers()
     }
 
     return list;
+}
+
+void SDLInputManager::runInSDLThread(on_thread_t func)
+{
+    std::unique_lock lk{mtx};
+    func = func;
+    SDL_Event e{.type=work_event_id};
+    SDL_PushEvent(&e);
+    cv.wait(lk);
+}
+
+void SDLInputManager::stop()
+{
+    SDL_Event e{.type=SDL_QUIT};
+    SDL_PushEvent(&e);
+    wait();
 }
