@@ -18,6 +18,12 @@
 #endif
 
 static inline void S9xReschedule (void);
+static pc_hook_map_t pc_hook_map;
+
+void S9xSetPCHooks (pc_hook_map_t map)
+{
+    pc_hook_map = std::move(map);
+}
 
 void S9xMainLoop (void)
 {
@@ -160,6 +166,9 @@ void S9xMainLoop (void)
 				Opcodes = S9xOpcodesSlow;
 		}
 
+        auto it = pc_hook_map.find(Registers.PC.xPBPC);
+        if (it != pc_hook_map.end())
+            it->second(Registers.PC.xPBPC);
 		Registers.PCw++;
 		(*Opcodes[Op].S9xOpcode)();
 

@@ -47,7 +47,6 @@ public:
     SDLInputManager();
     ~SDLInputManager();
 
-    std::optional<SDL_Event> ProcessEvent() { return std::nullopt; }
     std::vector<std::pair<int, std::string>> getXInputControllers();
 
     struct DiscreteAxisEvent
@@ -70,6 +69,7 @@ public:
 
     void runInSDLThread(on_thread_t func);
     void stop();
+    void rumble(uint16_t low_freq, uint16_t high_freq, uint32_t duration_ms);
 signals:
     void event(SDL_Event, int);
 protected:
@@ -83,5 +83,7 @@ private:
     std::mutex mtx;
     std::condition_variable cv;
     uint32_t work_event_id;
+    uint32_t rumble_event_id;
     on_thread_t on_thread;
+    std::tuple<uint16_t, uint16_t, uint32_t> rumble_data;
 };

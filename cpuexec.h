@@ -6,6 +6,8 @@
 
 #ifndef _CPUEXEC_H_
 #define _CPUEXEC_H_
+#include <unordered_map>
+#include <functional>
 
 #include "ppu.h"
 #ifdef DEBUGGER
@@ -48,6 +50,9 @@ void S9xMainLoop (void);
 void S9xReset (void);
 void S9xSoftReset (void);
 void S9xDoHEventProcessing (void);
+using pc_hook_func_t = std::function<void(uint32_t)>;
+using pc_hook_map_t = std::unordered_map<uint32_t, pc_hook_func_t>;
+void S9xSetPCHooks (pc_hook_map_t map);
 
 static inline void S9xUnpackStatus (void)
 {

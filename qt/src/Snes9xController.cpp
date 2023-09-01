@@ -1,3 +1,7 @@
+#include <QJsonDocument>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QFile>
 #include "Snes9xController.hpp"
 #include "SoftwareScalers.hpp"
 #include <memory>
@@ -216,12 +220,58 @@ bool Snes9xController::openFile(std::string filename)
         S9xAutoSaveSRAM();
     active = false;
     auto result = Memory.LoadROM(filename.c_str());
+    S9xSetPCHooks({});
     if (result)
     {
         active = true;
         Memory.LoadSRAM(S9xGetFilename(".srm", SRAM_DIR).c_str());
+        loadRumble();
     }
     return active;
+}
+
+void Snes9xController::loadRumble()
+{
+    QFile loadFile(S9xGetFilename(".json", SRAM_DIR).c_str());
+    if (!loadFile.open(QIODevice::ReadOnly))
+        return;
+    QByteArray rumbles = loadFile.readAll();
+    QJsonDocument loadDoc(QJsonDocument::fromJson(rumbles));
+    if (!loadDoc.isArray())
+        return;
+    pc_hook_map_t map;
+    for (const auto& elem : loadDoc.array())
+    {
+        if (!elem.isObject())
+            continue;
+        auto elem_obj = elem.toObject();
+        auto it = elem_obj.find("address");
+        if (it == elem_obj.end())
+            continue;
+        uint32_t address = it->toInteger();
+
+        it = elem_obj.find("low_freq");
+        if (it == elem_obj.end())
+            continue;
+        uint16_t low_freq = it->toInteger();
+
+        it = elem_obj.find("high_freq");
+        if (it == elem_obj.end())
+            continue;
+        uint16_t high_freq = it->toInteger();
+
+        it = elem_obj.find("duration_ms");
+        if (it == elem_obj.end())
+            continue;
+        uint32_t duration_ms = it->toInteger();
+        printf("rumble mapping: 0x%06x %d %d %d\n",
+               address, low_freq, high_freq, duration_ms);
+        map[address] = [this, low_freq, high_freq, duration_ms] (auto) {
+            if (rumble_function)
+                rumble_function(low_freq, high_freq, duration_ms);
+        };
+    }
+    S9xSetPCHooks(std::move(map));
 }
 
 void Snes9xController::mainLoop()

@@ -131,10 +131,12 @@ void EmuApplication::writeSamples(int16_t *data, int samples)
 
 void EmuApplication::startGame()
 {
+    using namespace std::placeholders;
     suspendThread();
     if (!sound_driver)
         restartAudio();
 
+    core->rumble_function = std::bind(&SDLInputManager::rumble, input_manager.get(), _1, _2, _3);
     core->screen_output_function = [&](uint16_t *data, int width, int height, int stride_bytes, double frame_rate) {
         if (window->canvas)
         {

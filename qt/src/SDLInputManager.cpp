@@ -11,6 +11,7 @@ SDLInputManager::SDLInputManager()
 {
     qRegisterMetaType<SDL_Event>();
     work_event_id = SDL_RegisterEvents(1);
+    rumble_event_id = SDL_RegisterEvents(1);
 }
 
 SDLInputManager::~SDLInputManager()
@@ -122,10 +123,23 @@ void SDLInputManager::run()
     bool run = true;
     SDL_Init(SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK);
     SDL_Event e{};
+    std::optional<int> rumble_end;
 
     while (run)
     {
-        SDL_WaitEvent(&e);
+        if (rumble_end)
+        {
+            auto timeout = !SDL_WaitEventTimeout(
+                    &e, std::max<int>(*rumble_end - SDL_GetTicks(), 0));
+            if (timeout)
+            {
+                rumble_end = std::nullopt;
+                for (const auto [id, dev] : devices)
+                    SDL_GameControllerRumble(dev.controller, 0, 0, 0);
+            }
+        }
+        else
+            SDL_WaitEvent(&e);
         switch (e.type)
         {
         case SDL_JOYAXISMOTION:
@@ -157,6 +171,14 @@ void SDLInputManager::run()
                 if (on_thread)
                     on_thread(devices);
                 cv.notify_one();
+            } else if (e.type == rumble_event_id)
+            {
+                std::unique_lock lk{mtx};
+                const auto [low_freq, high_freq, duration_ms] = rumble_data;
+                rumble_end = SDL_GetTicks() + duration_ms;
+                for (const auto [id, dev] : devices)
+                    SDL_GameControllerRumble(dev.controller, low_freq,
+                                             high_freq, duration_ms);
             }
             break;
         }
@@ -241,4 +263,12 @@ void SDLInputManager::stop()
     SDL_Event e{.type=SDL_QUIT};
     SDL_PushEvent(&e);
     wait();
+}
+
+void SDLInputManager::rumble(uint16_t low_freq, uint16_t high_freq, uint32_t duration_ms)
+{
+    std::unique_lock lk{mtx};
+    rumble_data = std::make_tuple(low_freq, high_freq, duration_ms);
+    SDL_Event e{.type=rumble_event_id};
+    SDL_PushEvent(&e);
 }

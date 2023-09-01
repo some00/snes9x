@@ -36,6 +36,7 @@ class Snes9xController
     void setPaused(bool paused);
     void setMessage(std::string message);
     void clearSoundBuffer();
+    void loadRumble();
     std::string getStateFolder();
     std::string config_folder;
     std::string sram_folder;
@@ -50,6 +51,7 @@ class Snes9xController
 
     std::function<void(uint16_t *, int, int, int, double)> screen_output_function = nullptr;
     std::function<void(int16_t *, int)> sound_output_function = nullptr;
+    std::function<void(uint16_t, uint16_t, uint32_t)> rumble_function = nullptr;
 
     bool active = false;
 
