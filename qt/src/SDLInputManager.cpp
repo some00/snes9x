@@ -230,7 +230,7 @@ std::vector<std::pair<int, std::string>> SDLInputManager::getXInputControllers()
 void SDLInputManager::runInSDLThread(on_thread_t func)
 {
     std::unique_lock lk{mtx};
-    func = func;
+    this->on_thread = func;
     SDL_Event e{.type=work_event_id};
     SDL_PushEvent(&e);
     cv.wait(lk);
